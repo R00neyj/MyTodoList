@@ -1,43 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Firebase To Do List</title>
+    <title>Secret To Do List</title>
     <style>
+      /* 기본적으로 앱 화면은 숨김 */
+      #app-container {
+        display: none;
+      }
+
+      /* 로그인 화면 스타일 */
+      #login-container {
+        text-align: center;
+        margin-top: 100px;
+      }
+
       .delete {
         margin-left: 20px;
         cursor: pointer;
+        color: red;
       }
       ol li {
-        padding: 4px;
+        padding: 8px;
         border-bottom: 1px solid #eee;
-      }
-      /* 로딩 중일 때 스타일 */
-      .loading {
-        color: gray;
-        font-size: 0.9em;
       }
     </style>
   </head>
   <body>
-    <h1>To do list (Firebase)</h1>
-    <input type="text" id="text" placeholder="할 일을 입력하세요" />
-    <button id="add">추가하기</button>
+    <div id="login-container">
+      <h1>📝 To do list</h1>
+      <h2>🔒 비밀번호를 입력하세요</h2>
+      <input type="password" id="password-input" placeholder="비밀번호" />
+      <button id="login-btn">접속하기</button>
+      <p id="login-msg" style="color: red"></p>
+    </div>
 
-    <ol id="list"></ol>
-
-    <p>
-      정보는 <strong>Firebase Firestore</strong>에 저장됩니다.<br />
-      새로고침 해도 데이터가 유지됩니다.
-    </p>
+    <div id="app-container">
+      <h1>📝 To do list</h1>
+      <input type="text" id="text" placeholder="할 일을 입력하세요" />
+      <button id="add">추가하기</button>
+      <button id="logout-btn" style="float: right">로그아웃</button>
+      <ol id="list"></ol>
+    </div>
 
     <script type="module">
-      // 1. 필요한 Firebase 함수들을 불러옵니다.
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+      // 인증(Auth) 관련 함수 추가 (getAuth, signInWithEmailAndPassword, signOut)
+      import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
       import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-      // 2. Firebase 설정 (제공해주신 키 사용)
       const firebaseConfig = {
         apiKey: "AIzaSyD4hfd0NRQbtGAUIlnAlESVP3pc_pA-er8",
         authDomain: "todo-backend-ddac0.firebaseapp.com",
@@ -47,121 +59,129 @@
         appId: "1:347023087526:web:4f72a5401e59e02ccb2167",
       };
 
-      // 3. 앱 및 DB 초기화
       const app = initializeApp(firebaseConfig);
       const db = getFirestore(app);
+      const auth = getAuth(app); // 인증 초기화
 
-      // 4. DOM 요소 선택
+      // --- DOM 요소 선택 ---
+      const loginContainer = document.querySelector("#login-container");
+      const appContainer = document.querySelector("#app-container");
+      const passwordInput = document.querySelector("#password-input");
+      const loginBtn = document.querySelector("#login-btn");
+      const loginMsg = document.querySelector("#login-msg");
+      const logoutBtn = document.querySelector("#logout-btn");
+
       const textEl = document.querySelector("#text");
       const addBtn = document.querySelector("#add");
       const listEl = document.querySelector("#list");
 
-      // --- 기능 구현 ---
+      // 💡 [핵심] 공용 이메일 설정 (사용자에게는 비밀번호만 입력받음)
+      const SHARED_EMAIL = "admin@todo.com";
 
-      // A. 데이터 불러오기 및 그리기 (Read)
-      const loadTodos = async () => {
-        // 목록 초기화
-        listEl.innerHTML = "";
+      // --- 인증 관련 함수 ---
 
+      // 1. 로그인 처리
+      const handleLogin = async () => {
+        const password = passwordInput.value;
         try {
-          // 'createdAt' 기준 오름차순 정렬 쿼리 생성
-          const q = query(collection(db, "todos"), orderBy("createdAt", "asc"));
-          const querySnapshot = await getDocs(q);
-
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            const id = doc.id;
-            renderTodoItem(id, data.text);
-          });
-        } catch (e) {
-          console.error("데이터 불러오기 실패:", e);
-          alert("데이터를 불러오지 못했습니다. 콘솔을 확인하세요.");
+          // 이메일은 고정해두고, 입력받은 비밀번호로 로그인 시도
+          await signInWithEmailAndPassword(auth, SHARED_EMAIL, password);
+          // 성공하면 onAuthStateChanged가 감지하여 화면 전환함
+          passwordInput.value = "";
+          loginMsg.textContent = "";
+        } catch (error) {
+          console.error(error);
+          loginMsg.textContent = "비밀번호가 틀렸습니다!";
         }
       };
 
-      // B. 화면에 리스트 아이템 그리는 함수 (UI)
+      // 2. 로그아웃 처리
+      logoutBtn.addEventListener("click", () => {
+        signOut(auth);
+        alert("로그아웃 되었습니다.");
+      });
+
+      // 3. 로그인 상태 감지 (로그인 되면 화면 전환 및 데이터 로드)
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          // 로그인 됨
+          loginContainer.style.display = "none";
+          appContainer.style.display = "block";
+          loadTodos(); // 데이터 불러오기 시작
+        } else {
+          // 로그아웃 됨
+          loginContainer.style.display = "block";
+          appContainer.style.display = "none";
+          listEl.innerHTML = ""; // 보안을 위해 목록 비우기
+        }
+      });
+
+      // 버튼 이벤트
+      loginBtn.addEventListener("click", handleLogin);
+      passwordInput.addEventListener("keyup", (e) => {
+        if (e.key === "Enter") handleLogin();
+      });
+
+      // --- 투두리스트 로직 (이전과 동일) ---
+
+      const loadTodos = async () => {
+        listEl.innerHTML = "";
+        try {
+          const q = query(collection(db, "todos"), orderBy("createdAt", "asc"));
+          const querySnapshot = await getDocs(q);
+          querySnapshot.forEach((doc) => {
+            renderTodoItem(doc.id, doc.data().text);
+          });
+        } catch (e) {
+          console.error("데이터 로드 실패 (권한 없음):", e);
+        }
+      };
+
       const renderTodoItem = (id, text) => {
         const liEl = document.createElement("li");
         const spanEl = document.createElement("span");
         const deleteBtn = document.createElement("button");
-
         spanEl.textContent = text;
-
         deleteBtn.textContent = "완료";
         deleteBtn.classList.add("delete");
-        deleteBtn.setAttribute("data-id", id); // 버튼에 문서 ID 심어두기
-
-        liEl.append(spanEl);
-        liEl.append(deleteBtn);
+        deleteBtn.setAttribute("data-id", id);
+        liEl.append(spanEl, deleteBtn);
         listEl.append(liEl);
       };
 
-      // C. 데이터 추가 (Create)
       const addTodoItem = async () => {
         const text = textEl.value.trim();
-        if (!text) {
-          alert("할 일을 입력해주세요.");
-          return;
-        }
-
+        if (!text) return;
         try {
-          // Firestore에 저장
-          const docRef = await addDoc(collection(db, "todos"), {
+          await addDoc(collection(db, "todos"), {
             text: text,
             completed: false,
-            createdAt: serverTimestamp(), // 서버 시간 저장
+            createdAt: serverTimestamp(),
           });
-
-          console.log("Document written with ID: ", docRef.id);
-
-          // 입력창 비우기 및 목록 새로고침
           textEl.value = "";
           loadTodos();
         } catch (e) {
-          console.error("추가 중 에러 발생: ", e);
-          alert("추가 실패!");
+          alert("저장 실패!");
         }
       };
 
-      // D. 데이터 삭제 (Delete)
       const deleteTodo = async (id) => {
-        if (!confirm("정말 삭제(완료) 하시겠습니까?")) return;
-
+        if (!confirm("삭제하시겠습니까?")) return;
         try {
-          // Firestore에서 해당 ID 문서 삭제
           await deleteDoc(doc(db, "todos", id));
-
-          // 목록 새로고침
           loadTodos();
         } catch (e) {
-          console.error("삭제 중 에러 발생: ", e);
           alert("삭제 실패!");
         }
       };
 
-      // --- 이벤트 리스너 등록 ---
-
-      // 1. 추가 버튼 클릭
       addBtn.addEventListener("click", addTodoItem);
-
-      // 2. 엔터키 입력
       textEl.addEventListener("keyup", (e) => {
-        if (e.key === "Enter") {
-          addTodoItem();
-        }
+        if (e.key === "Enter") addTodoItem();
       });
-
-      // 3. 삭제 버튼 클릭 (이벤트 위임)
       listEl.addEventListener("click", (e) => {
-        // 클릭된 요소가 delete 클래스를 가진 버튼인지 확인
-        if (e.target.classList.contains("delete")) {
-          const docId = e.target.getAttribute("data-id");
-          deleteTodo(docId);
-        }
+        if (e.target.classList.contains("delete")) deleteTodo(e.target.getAttribute("data-id"));
       });
-
-      // 앱 시작 시 데이터 로드
-      loadTodos();
     </script>
   </body>
 </html>
