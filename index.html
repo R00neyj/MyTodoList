@@ -3,7 +3,165 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Firebase To Do List</title>
+    <style>
+      .delete {
+        margin-left: 20px;
+        cursor: pointer;
+      }
+      ol li {
+        padding: 4px;
+        border-bottom: 1px solid #eee;
+      }
+      /* 로딩 중일 때 스타일 */
+      .loading {
+        color: gray;
+        font-size: 0.9em;
+      }
+    </style>
   </head>
-  <body></body>
+  <body>
+    <h1>To do list (Firebase)</h1>
+    <input type="text" id="text" placeholder="할 일을 입력하세요" />
+    <button id="add">추가하기</button>
+
+    <ol id="list"></ol>
+
+    <p>
+      정보는 <strong>Firebase Firestore</strong>에 저장됩니다.<br />
+      새로고침 해도 데이터가 유지됩니다.
+    </p>
+
+    <script type="module">
+      // 1. 필요한 Firebase 함수들을 불러옵니다.
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+      import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+      // 2. Firebase 설정 (제공해주신 키 사용)
+      const firebaseConfig = {
+        apiKey: "AIzaSyD4hfd0NRQbtGAUIlnAlESVP3pc_pA-er8",
+        authDomain: "todo-backend-ddac0.firebaseapp.com",
+        projectId: "todo-backend-ddac0",
+        storageBucket: "todo-backend-ddac0.firebasestorage.app",
+        messagingSenderId: "347023087526",
+        appId: "1:347023087526:web:4f72a5401e59e02ccb2167",
+      };
+
+      // 3. 앱 및 DB 초기화
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+
+      // 4. DOM 요소 선택
+      const textEl = document.querySelector("#text");
+      const addBtn = document.querySelector("#add");
+      const listEl = document.querySelector("#list");
+
+      // --- 기능 구현 ---
+
+      // A. 데이터 불러오기 및 그리기 (Read)
+      const loadTodos = async () => {
+        // 목록 초기화
+        listEl.innerHTML = "";
+
+        try {
+          // 'createdAt' 기준 오름차순 정렬 쿼리 생성
+          const q = query(collection(db, "todos"), orderBy("createdAt", "asc"));
+          const querySnapshot = await getDocs(q);
+
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            const id = doc.id;
+            renderTodoItem(id, data.text);
+          });
+        } catch (e) {
+          console.error("데이터 불러오기 실패:", e);
+          alert("데이터를 불러오지 못했습니다. 콘솔을 확인하세요.");
+        }
+      };
+
+      // B. 화면에 리스트 아이템 그리는 함수 (UI)
+      const renderTodoItem = (id, text) => {
+        const liEl = document.createElement("li");
+        const spanEl = document.createElement("span");
+        const deleteBtn = document.createElement("button");
+
+        spanEl.textContent = text;
+
+        deleteBtn.textContent = "완료";
+        deleteBtn.classList.add("delete");
+        deleteBtn.setAttribute("data-id", id); // 버튼에 문서 ID 심어두기
+
+        liEl.append(spanEl);
+        liEl.append(deleteBtn);
+        listEl.append(liEl);
+      };
+
+      // C. 데이터 추가 (Create)
+      const addTodoItem = async () => {
+        const text = textEl.value.trim();
+        if (!text) {
+          alert("할 일을 입력해주세요.");
+          return;
+        }
+
+        try {
+          // Firestore에 저장
+          const docRef = await addDoc(collection(db, "todos"), {
+            text: text,
+            completed: false,
+            createdAt: serverTimestamp(), // 서버 시간 저장
+          });
+
+          console.log("Document written with ID: ", docRef.id);
+
+          // 입력창 비우기 및 목록 새로고침
+          textEl.value = "";
+          loadTodos();
+        } catch (e) {
+          console.error("추가 중 에러 발생: ", e);
+          alert("추가 실패!");
+        }
+      };
+
+      // D. 데이터 삭제 (Delete)
+      const deleteTodo = async (id) => {
+        if (!confirm("정말 삭제(완료) 하시겠습니까?")) return;
+
+        try {
+          // Firestore에서 해당 ID 문서 삭제
+          await deleteDoc(doc(db, "todos", id));
+
+          // 목록 새로고침
+          loadTodos();
+        } catch (e) {
+          console.error("삭제 중 에러 발생: ", e);
+          alert("삭제 실패!");
+        }
+      };
+
+      // --- 이벤트 리스너 등록 ---
+
+      // 1. 추가 버튼 클릭
+      addBtn.addEventListener("click", addTodoItem);
+
+      // 2. 엔터키 입력
+      textEl.addEventListener("keyup", (e) => {
+        if (e.key === "Enter") {
+          addTodoItem();
+        }
+      });
+
+      // 3. 삭제 버튼 클릭 (이벤트 위임)
+      listEl.addEventListener("click", (e) => {
+        // 클릭된 요소가 delete 클래스를 가진 버튼인지 확인
+        if (e.target.classList.contains("delete")) {
+          const docId = e.target.getAttribute("data-id");
+          deleteTodo(docId);
+        }
+      });
+
+      // 앱 시작 시 데이터 로드
+      loadTodos();
+    </script>
+  </body>
 </html>
